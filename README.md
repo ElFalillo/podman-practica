@@ -1,6 +1,6 @@
-# Práctica de Podman con Ansible
+# Práctica de Podman
 
-Este repositorio contiene una práctica independiente para aprender **Podman** y desplegar un laboratorio con **PHP** y **MySQL** mediante un playbook de **Ansible**.
+Este repositorio contiene una práctica independiente para aprender **Podman** y desplegar un laboratorio con **PHP** y **MySQL** mediante contenedores.
 
 El laboratorio crea dos contenedores:
 
@@ -24,20 +24,18 @@ Podman sirve para:
 - Crear redes privadas entre contenedores.
 - Montar volúmenes para conservar datos.
 - Crear imágenes personalizadas mediante `Containerfile`.
-- Automatizar despliegues con Ansible.
+- Gestionar contenedores desde la terminal.
 
-## ¿Qué es un playbook de Ansible?
+## ¿Qué hace esta práctica?
 
-Un **playbook** es un fichero YAML donde se describen las tareas que Ansible debe ejecutar en uno o varios servidores.
+Esta práctica realiza las siguientes tareas:
 
-En este proyecto, el playbook realiza las siguientes tareas:
-
-1. Instala Podman en la máquina gestionada.
+1. Instala Podman en la máquina Debian.
 2. Crea las carpetas necesarias para los datos y la web.
 3. Crea una red Podman llamada `r3con-net`.
 4. Despliega un contenedor MySQL.
 5. Despliega un contenedor PHP con Apache.
-6. Copia una página PHP de prueba.
+6. Crea una página PHP de prueba.
 7. Comprueba que ambos contenedores están en ejecución.
 
 ## Estructura del repositorio
@@ -45,8 +43,6 @@ En este proyecto, el playbook realiza las siguientes tareas:
 ```text
 podman-practica/
 ├── README.md
-├── inventory.ini
-├── desplegar_podman.yml
 ├── web/
 │   └── index.php
 └── .gitignore
@@ -56,82 +52,161 @@ podman-practica/
 
 Necesitas:
 
-- Una máquina controladora con Ansible instalado.
-- Una máquina virtual Debian como servidor gestionado.
-- Conectividad SSH entre ambas máquinas.
-- Un usuario con permisos `sudo` en la máquina gestionada.
+- Una máquina virtual Debian.
+- Un usuario con permisos `sudo`.
+- Conexión a Internet para descargar las imágenes de los contenedores.
 
-## Instalar Ansible
+## Instalar Podman
 
-En la máquina controladora:
+En la máquina Debian:
 
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-pip python3-venv
-python3 -m venv ~/ansible-env
-source ~/ansible-env/bin/activate
-pip install ansible
-ansible --version
+sudo apt install -y podman
+podman --version
 ```
 
-## Configurar SSH
-
-Genera una clave SSH en la máquina controladora:
+Comprueba que Podman funciona correctamente:
 
 ```bash
-ssh-keygen -t ed25519
+podman run --rm docker.io/library/hello-world
 ```
 
-Cópiala al servidor gestionado:
+## Crear las carpetas del laboratorio
+
+Crea las carpetas donde se guardarán la web y los datos de MySQL:
 
 ```bash
-ssh-copy-id usuario@IP_DEL_SERVIDOR
+mkdir -p ~/r3con/db
+mkdir -p ~/r3con/web
 ```
 
-Comprueba la conexión:
+Comprueba que se han creado correctamente:
 
 ```bash
-ssh usuario@IP_DEL_SERVIDOR
+ls -la ~/r3con
 ```
 
-## Configurar el inventario
+## Crear la red Podman
 
-Edita `inventory.ini` y sustituye la IP y el usuario por los de tu máquina Debian:
-
-```ini
-[servidores_podman]
-192.168.1.50 ansible_user=tu_usuario
-```
-
-## Ejecutar el playbook
-
-Primero, comprueba qué cambios se aplicarían sin modificar el servidor:
+Crea una red privada para que los contenedores puedan comunicarse entre ellos:
 
 ```bash
-ansible-playbook -i inventory.ini desplegar_podman.yml --check
+podman network create r3con-net
 ```
 
-Para ejecutar el despliegue:
+Comprueba que la red se ha creado:
 
 ```bash
-ansible-playbook -i inventory.ini desplegar_podman.yml
+podman network ls
 ```
 
-## Comprobar los contenedores
+## Desplegar MySQL
 
-En la máquina gestionada:
+Ejecuta el contenedor de MySQL:
+
+```bash
+podman run -d --name r3con-db \
+  --network r3con-net \
+  -e MYSQL_ROOT_PASSWORD=CambiaEstaClaveRoot \
+  -e MYSQL_DATABASE=r3con \
+  -e MYSQL_USER=r3con_user \
+  -e MYSQL_PASSWORD=CambiaEstaClaveUsuario \
+  -v ~/r3con/db:/var/lib/mysql:Z \
+  docker.io/library/mysql:8.0
+```
+
+### Explicación del comando
+
+| Opción | Función |
+|---|---|
+| `-d` | Ejecuta el contenedor en segundo plano. |
+| `--name r3con-db` | Asigna el nombre `r3con-db` al contenedor. |
+| `--network r3con-net` | Conecta el contenedor a la red Podman. |
+| `-e` | Define variables de entorno. |
+| `-v ~/r3con/db:/var/lib/mysql:Z` | Monta la carpeta local como volumen para conservar los datos. |
+| `docker.io/library/mysql:8.0` | Imagen oficial de MySQL versión 8.0. |
+
+Comprueba que el contenedor está en ejecución:
 
 ```bash
 podman ps
 ```
 
-Deberías ver los contenedores `r3con-db` y `r3con-web` en ejecución.
-
 Para ver los logs de MySQL:
 
 ```bash
-podman logs r3con-db
+podman logs -f r3con-db
 ```
+
+Cuando aparezca un mensaje similar a `ready for connections`, MySQL estará listo. Pulsa `Ctrl + C` para salir de los logs sin detener el contenedor.
+
+## Crear la página PHP
+
+Crea el fichero de la web:
+
+```bash
+nano ~/r3con/web/index.php
+```
+
+Pega este contenido:
+
+```php
+<?php
+$host = "r3con-db";
+$user = "r3con_user";
+$password = "CambiaEstaClaveUsuario";
+$database = "r3con";
+
+$conexion = @mysqli_connect($host, $user, $password, $database);
+
+echo "<h1>R3con - Laboratorio Podman</h1>";
+
+echo "<p>Contenedor PHP con Apache ejecutándose correctamente.</p>";
+
+if ($conexion) {
+    echo "<p style='color:green;'>Conexión a MySQL correcta.</p>";
+    mysqli_close($conexion);
+} else {
+    echo "<p style='color:red;'>Error de conexión: " . mysqli_connect_error() . "</p>";
+}
+?>
+```
+
+Guarda el fichero con `Ctrl + O`, pulsa Enter y cierra con `Ctrl + X`.
+
+## Desplegar PHP con Apache
+
+Ejecuta el contenedor web:
+
+```bash
+podman run -d --name r3con-web \
+  --network r3con-net \
+  -p 8080:80 \
+  -v ~/r3con/web:/var/www/html:Z \
+  docker.io/library/php:8.3-apache
+```
+
+### Explicación del comando
+
+| Opción | Función |
+|---|---|
+| `-d` | Ejecuta el contenedor en segundo plano. |
+| `--name r3con-web` | Asigna el nombre `r3con-web` al contenedor. |
+| `--network r3con-net` | Conecta el contenedor a la misma red que MySQL. |
+| `-p 8080:80` | Publica el puerto 80 del contenedor en el puerto 8080 de la máquina. |
+| `-v ~/r3con/web:/var/www/html:Z` | Monta la carpeta local con la web dentro del contenedor. |
+| `docker.io/library/php:8.3-apache` | Imagen oficial de PHP 8.3 con Apache. |
+
+## Comprobar los contenedores
+
+Para ver los contenedores en ejecución:
+
+```bash
+podman ps
+```
+
+Deberías ver `r3con-db` y `r3con-web`.
 
 Para ver los logs del servidor web:
 
@@ -141,7 +216,7 @@ podman logs r3con-web
 
 ## Acceder a la aplicación
 
-Desde la máquina gestionada:
+Desde la misma máquina Debian:
 
 ```bash
 curl http://127.0.0.1:8080
@@ -170,17 +245,27 @@ La página comprobará la conexión con MySQL y mostrará si ha sido correcta.
 | `podman network ls` | Muestra las redes Podman. |
 | `podman network inspect r3con-net` | Muestra los detalles de la red. |
 
-## Explicación del playbook
+## Entrar dentro de MySQL
 
-| Parte | Función |
-|---|---|
-| `hosts: servidores_podman` | Ejecuta las tareas sobre el grupo definido en el inventario. |
-| `become: true` | Usa privilegios de administrador cuando son necesarios. |
-| `ansible.builtin.apt` | Instala Podman y sus dependencias en Debian. |
-| `ansible.builtin.file` | Crea los directorios para la web y la base de datos. |
-| `containers.podman.podman_network` | Crea la red `r3con-net`. |
-| `containers.podman.podman_container` | Crea y ejecuta los contenedores. |
-| `ansible.builtin.copy` | Copia la página PHP al directorio web. |
+Puedes acceder a MySQL desde el contenedor:
+
+```bash
+podman exec -it r3con-db mysql -u r3con_user -p
+```
+
+Cuando pida la contraseña, introduce la que configuraste en `MYSQL_PASSWORD`.
+
+Para comprobar que la base de datos existe:
+
+```sql
+SHOW DATABASES;
+```
+
+Para salir de MySQL:
+
+```sql
+EXIT;
+```
 
 ## Seguridad
 
@@ -188,10 +273,10 @@ Este laboratorio usa contraseñas sencillas solo para practicar. En un entorno r
 
 - No guardes contraseñas en el repositorio.
 - Usa un fichero `.env` excluido por `.gitignore`.
-- Usa Ansible Vault para proteger secretos.
 - No publiques el puerto de MySQL al exterior.
 - Usa contraseñas largas y únicas.
 - Mantén las imágenes actualizadas.
+- Haz copias de seguridad del volumen de MySQL.
 
 ## Siguiente paso
 
