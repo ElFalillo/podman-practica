@@ -1,0 +1,97 @@
+---
+- name: Desplegar laboratorio Podman con PHP y MySQL
+  hosts: servidores_podman
+  become: true
+
+  vars:
+    mysql_root_password: "CambiaEstaClaveRoot"
+    mysql_database: "r3con"
+    mysql_user: "r3con_user"
+    mysql_password: "CambiaEstaClaveUsuario"
+
+  tasks:
+    - name: Actualizar la caché de APT
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Instalar Podman
+      ansible.builtin.apt:
+        name:
+          - podman
+          - python3-podman
+        state: present
+
+    - name: Crear directorio de la base de datos
+      ansible.builtin.file:
+        path: /home/{{ ansible_user }}/r3con/db
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0755"
+
+    - name: Crear directorio de la web
+      ansible.builtin.file:
+        path: /home/{{ ansible_user }}/r3con/web
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0755"
+
+    - name: Crear red Podman para R3con
+      containers.podman.podman_network:
+        name: r3con-net
+        state: present
+
+    - name: Desplegar contenedor MySQL
+      containers.podman.podman_container:
+        name: r3con-db
+        image: docker.io/library/mysql:8.0
+        state: started
+        recreate: true
+        network: r3con-net
+        env:
+          MYSQL_ROOT_PASSWORD: "{{ mysql_root_password }}"
+          MYSQL_DATABASE: "{{ mysql_database }}"
+          MYSQL_USER: "{{ mysql_user }}"
+          MYSQL_PASSWORD: "{{ mysql_password }}"
+        volumes:
+          - /home/{{ ansible_user }}/r3con/db:/var/lib/mysql:Z
+
+    - name: Copiar página PHP de prueba
+      ansible.builtin.copy:
+        src: web/index.php
+        dest: /home/{{ ansible_user }}/r3con/web/index.php
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0644"
+
+    - name: Desplegar contenedor web PHP
+      containers.podman.podman_container:
+        name: r3con-web
+        image: docker.io/library/php:8.3-apache
+        state: started
+        recreate: true
+        network: r3con-net
+        publish:
+          - "8080:80"
+        volumes:
+          - /home/{{ ansible_user }}/r3con/web:/var/www/html:Z
+
+    - name: Comprobar que el contenedor MySQL está en ejecución
+      ansible.builtin.command:
+        cmd: podman ps --filter name=r3con-db --format "{{ '{{' }}.Names{{ '}}' }}"
+      register: mysql_status
+      changed_when: false
+
+    - name: Comprobar que el contenedor web está en ejecución
+      ansible.builtin.command:
+        cmd: podman ps --filter name=r3con-web --format "{{ '{{' }}.Names{{ '}}' }}"
+      register: web_status
+      changed_when: false
+
+    - name: Mostrar estado de los contenedores
+      ansible.builtin.debug:
+        msg:
+          - "MySQL: {{ mysql_status.stdout }}"
+          - "Web: {{ web_status.stdout }}"

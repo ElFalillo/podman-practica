@@ -1,0 +1,19 @@
+# Secretos y variables de entorno
+.env
+*.env
+
+# Credenciales y claves
+*.key
+*.pem
+id_rsa
+id_ed25519
+
+# Logs y ficheros temporales
+*.log
+*.tmp
+
+# Volúmenes de base de datos
+r3con/db/
+
+# Ficheros de sistema
+.DS_Store
